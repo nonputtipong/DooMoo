@@ -24,8 +24,6 @@ class _CameraState extends State<CameraPage> {
     try {
       final XFile? xfile = await _picker.pickImage(
         source: ImageSource.camera,
-        maxWidth: 2048,
-        imageQuality: 90,
       );
       if (!mounted) return;
 

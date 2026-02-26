@@ -155,6 +155,24 @@ class CameraMetadataExtractor {
             print('Error extracting dimensions from EXIF: $e');
           }
         }
+
+        // Fix for Android devices providing pixel dimensions pre-rotation
+        try {
+          if (data.containsKey('Image Orientation')) {
+            final orientationValue = data['Image Orientation']?.printable ?? '';
+            bool isRotated = orientationValue.contains('90') ||
+                orientationValue.contains('270') ||
+                ['5', '6', '7', '8'].contains(orientationValue);
+
+            if (isRotated && imageWidth != null && imageHeight != null) {
+              int temp = imageWidth;
+              imageWidth = imageHeight;
+              imageHeight = temp;
+            }
+          }
+        } catch (e) {
+          print('Error checking EXIF orientation: $e');
+        }
       }
     } catch (e) {
       print('Error reading EXIF data: $e');
