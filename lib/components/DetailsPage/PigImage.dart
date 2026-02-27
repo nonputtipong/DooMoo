@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:blackpig/utils/responsive.dart';
+import 'package:blackpig/services/object_detection_service.dart';
 
 class PigImage extends StatefulWidget {
   final String? imagePath;
@@ -14,6 +15,7 @@ class PigImage extends StatefulWidget {
 class _PigImageState extends State<PigImage> {
   double? _aspectRatio;
   bool _isLoading = true;
+  List<Map<String, dynamic>> _detections = [];
 
   @override
   void initState() {
@@ -35,6 +37,7 @@ class _PigImageState extends State<PigImage> {
         setState(() {
           _aspectRatio = null;
           _isLoading = false;
+          _detections = [];
         });
       }
     }
@@ -66,9 +69,19 @@ class _PigImageState extends State<PigImage> {
         final height = frame.image.height.toDouble();
         setState(() {
           _aspectRatio = width / height;
-          _isLoading = false;
         });
         frame.image.dispose();
+
+        // Run object detection inference
+        final detections = await PigObjectDetectionService()
+            .detectObjectsInImage(widget.imagePath!);
+
+        if (mounted) {
+          setState(() {
+            _detections = detections;
+            _isLoading = false;
+          });
+        }
       }
     } catch (e) {
       // If we can't load the image, use a default aspect ratio
@@ -100,17 +113,20 @@ class _PigImageState extends State<PigImage> {
           : _aspectRatio != null
               ? AspectRatio(
                   aspectRatio: _aspectRatio!,
-                  child: Container(
-                    width: ResponsiveUtils.width(context, 90),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFD9D9D9),
-                      borderRadius: BorderRadius.circular(12),
-                      image: widget.imagePath != null
-                          ? DecorationImage(
-                              image: FileImage(File(widget.imagePath!)),
-                              fit: BoxFit.cover,
-                            )
-                          : null,
+                  child: CustomPaint(
+                    foregroundPainter: BoundingBoxPainter(_detections),
+                    child: Container(
+                      width: ResponsiveUtils.width(context, 90),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFD9D9D9),
+                        borderRadius: BorderRadius.circular(12),
+                        image: widget.imagePath != null
+                            ? DecorationImage(
+                                image: FileImage(File(widget.imagePath!)),
+                                fit: BoxFit.cover,
+                              )
+                            : null,
+                      ),
                     ),
                   ),
                 )
@@ -123,5 +139,70 @@ class _PigImageState extends State<PigImage> {
                   ),
                 ),
     );
+  }
+}
+
+class BoundingBoxPainter extends CustomPainter {
+  final List<Map<String, dynamic>> detections;
+
+  BoundingBoxPainter(this.detections);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color.fromARGB(255, 62, 255, 62)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.0;
+
+    final textStyle = const TextStyle(
+      color: Color.fromARGB(255, 62, 255, 62),
+      fontSize: 18,
+      fontWeight: FontWeight.bold,
+      backgroundColor: Colors.black54,
+    );
+
+    for (var detection in detections) {
+      final rectMap = detection['rect'];
+      final score = detection['score'] as double;
+      // Object detection coordinate order is usually [ymin, xmin, ymax, xmax]
+      // Because outputs were normalized 0-1 we must multiply by Canvas width and height
+      final yMin = rectMap['yMin'];
+      final xMin = rectMap['xMin'];
+      final yMax = rectMap['yMax'];
+      final xMax = rectMap['xMax'];
+
+      // Add a sanity check if boxes are not normalized
+      final multiplierX = xMax > 2 ? 1.0 : size.width;
+      final multiplierY = yMax > 2 ? 1.0 : size.height;
+
+      final rect = Rect.fromLTRB(
+        xMin * multiplierX,
+        yMin * multiplierY,
+        xMax * multiplierX,
+        yMax * multiplierY,
+      );
+
+      canvas.drawRect(rect, paint);
+
+      final textSpan = TextSpan(
+        text: ' Pig ${(score * 100).toStringAsFixed(1)}% ',
+        style: textStyle,
+      );
+      final textPainter = TextPainter(
+        text: textSpan,
+        textDirection: TextDirection.ltr,
+      );
+      textPainter.layout();
+      textPainter.paint(
+        canvas,
+        Offset(
+            xMin * multiplierX, (yMin * multiplierY) - textPainter.height - 2),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant BoundingBoxPainter oldDelegate) {
+    return oldDelegate.detections != detections;
   }
 }

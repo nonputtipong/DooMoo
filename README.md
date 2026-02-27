@@ -42,6 +42,21 @@ flutter build appbundle --release
 
 ---
 
+## Machine Learning Integration
+
+The application integrates a custom **Pig Object Detection Model** using `tflite_flutter`.
+
+### Features
+- **Asynchronous Initialization**: The `PigObjectDetectionService` pre-loads the model in the background upon app launch to prevent UI blocking.
+- **Hardware Acceleration**: Automatically attempts to use `GpuDelegateV2`. If the device/emulator lacks proper OpenGL/OpenCL drivers, it gracefully falls back to `XNNPackDelegate` or pure CPU to ensure 100% compatibility.
+- **YOLOv8 Output Parsing**: Custom decoding algorithm that:
+  - Consumes `[1, 5, 8400]` model tensor dimensions.
+  - Normalizes object bounding boxes to the captured photo.
+  - Applies **Non-Maximum Suppression (NMS)** with a 45% IoU threshold to eliminate duplicate rectangles over the same pig.
+- **Isolate Threading**: Inference is offloaded to a background `IsolateInterpreter`, allowing the Main UI thread to maintain 60FPS while rendering the `BoundingBoxPainter`.
+
+---
+
 Useful Resources
 - [Material component widgets](https://docs.flutter.dev/ui/widgets/material)
 
