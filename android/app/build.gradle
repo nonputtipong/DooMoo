@@ -10,6 +10,21 @@ android {
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
+    aaptOptions {
+        noCompress 'tflite', 'ptl'
+    }
+
+    packagingOptions {
+        pickFirst '**/libc++_shared.so'
+    }
+
+    configurations.all {
+        resolutionStrategy {
+            force "org.pytorch:pytorch_android_lite:2.1.0"
+            force "org.pytorch:pytorch_android_torchvision_lite:2.1.0"
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11

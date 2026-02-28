@@ -1,7 +1,9 @@
 import 'dart:io';
 import 'dart:ui' as ui;
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:blackpig/utils/responsive.dart';
+import 'package:blackpig/services/pytorch_segmentation_service.dart';
 
 class PigImage extends StatefulWidget {
   final String? imagePath;
@@ -14,6 +16,8 @@ class PigImage extends StatefulWidget {
 class _PigImageState extends State<PigImage> {
   double? _aspectRatio;
   bool _isLoading = true;
+  ui.Image? _maskImage;
+  int _segmentationGeneration = 0;
 
   @override
   void initState() {
@@ -23,6 +27,12 @@ class _PigImageState extends State<PigImage> {
     } else {
       _isLoading = false;
     }
+  }
+
+  @override
+  void dispose() {
+    _maskImage?.dispose();
+    super.dispose();
   }
 
   @override
@@ -58,6 +68,10 @@ class _PigImageState extends State<PigImage> {
       }
 
       final bytes = await file.readAsBytes();
+
+      // Start AI Segmentation asynchronously
+      _runSegmentation(bytes);
+
       final codec = await ui.instantiateImageCodec(bytes);
       final frame = await codec.getNextFrame();
 
@@ -78,6 +92,44 @@ class _PigImageState extends State<PigImage> {
           _isLoading = false;
         });
       }
+    }
+  }
+
+  Future<void> _runSegmentation(Uint8List bytes) async {
+    final int generation = ++_segmentationGeneration;
+    try {
+      final service = PigSegmentationService();
+      await service.initialize();
+
+      if (generation != _segmentationGeneration) return;
+
+      final result = await service.runSegmentation(bytes);
+      if (generation != _segmentationGeneration) return;
+
+      if (result != null && mounted) {
+        ui.decodeImageFromPixels(
+          result.rgbaPixels,
+          result.maskWidth,
+          result.maskHeight,
+          ui.PixelFormat.rgba8888,
+          (img) {
+            if (generation != _segmentationGeneration) {
+              img.dispose();
+              return;
+            }
+            if (mounted) {
+              setState(() {
+                _maskImage?.dispose();
+                _maskImage = img;
+              });
+            } else {
+              img.dispose();
+            }
+          },
+        );
+      }
+    } catch (e) {
+      debugPrint("Segmentation failed: $e");
     }
   }
 
@@ -112,6 +164,11 @@ class _PigImageState extends State<PigImage> {
                             )
                           : null,
                     ),
+                    child: _maskImage != null
+                        ? CustomPaint(
+                            painter: SegmentationMaskPainter(_maskImage!),
+                          )
+                        : null,
                   ),
                 )
               : Container(
@@ -123,5 +180,32 @@ class _PigImageState extends State<PigImage> {
                   ),
                 ),
     );
+  }
+}
+
+class SegmentationMaskPainter extends CustomPainter {
+  final ui.Image maskImage;
+
+  SegmentationMaskPainter(this.maskImage);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..isAntiAlias = false
+      ..filterQuality = FilterQuality.none;
+
+    // Stretch the 120x120 mask perfectly over the image's bounding box
+    canvas.drawImageRect(
+      maskImage,
+      Rect.fromLTWH(
+          0, 0, maskImage.width.toDouble(), maskImage.height.toDouble()),
+      Rect.fromLTWH(0, 0, size.width, size.height),
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant SegmentationMaskPainter oldDelegate) {
+    return oldDelegate.maskImage != maskImage;
   }
 }
