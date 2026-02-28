@@ -49,4 +49,3 @@ AGENTS.md
 .agent/
 SKILLS Mastery/
 assets/model/*.pth
-assets/model/*.ptl
